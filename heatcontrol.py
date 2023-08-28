@@ -15,6 +15,8 @@ import logging
 
 MAX_WAIT = 150
 DEFAULT_CUTTER = 60
+DEFAULT_MAXDIFF = 50
+
 CONTROLLER = "H60-083a8d015ed0"
 REGION = "SE3"
 CONTROL_BASE = (
@@ -36,8 +38,13 @@ def get_config():
     j = json.loads(r.text.strip('"').encode("ascii").decode("unicode_escape"))
 
     if not "config" in j:
-        j["config"] = {"cutter": DEFAULT_CUTTER}
+        j["config"] = {}
 
+    if not "cutter" in j["config"]:
+        j["cutter"] = DEFAULT_CUTTER
+
+    if not "maxdiff" in j["config"]:
+        j["maxdiff"] = DEFAULT_MAXDIFF
     return j
 
 
@@ -105,7 +112,10 @@ def filter_prices(p, config):
     p.sort(key=lambda x: float(x["value"]))
 
     minp = float(p[0]["value"])
-    cutpoint = minp * (100 + float(config["config"]["cutter"])) / 100
+    cutpoint = min(
+        minp * (100 + float(config["config"]["cutter"])) / 100,
+        minp + float(config["config"]["maxdiff"]),
+    )
 
     # Filter out price if more than 175% of lowest
 
@@ -117,7 +127,7 @@ def should_heat_water(db, config):
 
     prices = list(filter(lambda x: price_apply(x, config), get_prices(db)))
     prices = filter_prices(prices, config)
-    logger.debug(f"Prices are {prices}\n")
+    logger.debug(f"Prices are {list(prices)}\n")
 
     # Price timestamps are in UTC
     # We have already checked borders and only need to see i we're
