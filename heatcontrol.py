@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import zeroconf
 import time
 import socket
 import requests
@@ -12,10 +11,22 @@ import dateutil.parser
 import datetime
 import sys
 import logging
+import typing
 
 MAX_WAIT = 150
-DEFAULT_CUTTER = 60
-DEFAULT_MAXDIFF = 50
+
+defaults = {
+    "cutter": 60,
+    "maxdiff": 50,
+    "getup": 5,
+    "bedtime": 22,
+    "heatcooldown": 2,
+    "heatup": 2,
+    "wwcooldown": 2,
+    "wwup": 1,
+    "lowprice": 35,
+}
+
 
 CONTROLLER = "H60-083a8d015ed0"
 REGION = "SE3"
@@ -38,17 +49,20 @@ def get_config():
     j = json.loads(r.text.strip('"').encode("ascii").decode("unicode_escape"))
 
     if not "config" in j:
-        j["config"] = {}
+        j["config"] = defaults
+    else:
+        for p in defaults:
+            if not p in j["config"]:
+                j["config"][p] = defaults[p]
 
-    if not "cutter" in j["config"]:
-        j["cutter"] = DEFAULT_CUTTER
+    # Make sure everything is numeric
+    for p in j["config"]:
+        j["config"][p] = float(j["config"][p])
 
-    if not "maxdiff" in j["config"]:
-        j["maxdiff"] = DEFAULT_MAXDIFF
     return j
 
 
-def override_active(config):
+def override_active(config: dict):
     current_data = False
 
     if not "override" in config:
@@ -108,36 +122,69 @@ def price_apply(x, config):
     return False
 
 
-def filter_prices(p, config):
-    p.sort(key=lambda x: float(x["value"]))
+def filter_prices(p: list[dict[str, typing.Any]], config: dict[str, float]):
+    p.sort(key=lambda x: x["value"])
 
-    minp = float(p[0]["value"])
+    minp = p[0]["value"]
     cutpoint = min(
-        minp * (100 + float(config["config"]["cutter"])) / 100,
-        minp + float(config["config"]["maxdiff"]),
+        minp * (100 + config["cutter"]) / 100,
+        minp + config["maxdiff"],
     )
 
     # Filter out price if more than 175% of lowest
 
-    return filter(lambda x: float(x["value"]) < cutpoint, p)
+    return filter(
+        lambda x: x["value"] < cutpoint or x["value"] < config["lowprice"],
+        p,
+    )
 
 
-def should_heat_water(db, config):
+def should_heat_water(db, config: dict[str, float]):
     t = time.localtime().tm_hour
 
+    # Evening, we want to heat no more?
+    if t <= (config["bedtime"] - config["wwcooldown"]):
+        return False
+
     prices = list(filter(lambda x: price_apply(x, config), get_prices(db)))
-    prices = filter_prices(prices, config)
-    logger.debug(f"Prices are {list(prices)}\n")
+    prices = list(filter_prices(prices, config))
 
     # Price timestamps are in UTC
     # We have already checked borders and only need to see i we're
     # in one of the cheap slots
     thishour = datetime.datetime.utcnow().hour
 
+    if thishour < config["getup"]:
+        # We might not need to warm water yet, or we should?
+
+        # Any remaining low prices before getup, at all?
+        earlyprices = list(
+            filter(lambda x: x["timestamp"].hour < config["getup"], prices)
+        )
+        if not earlyprices:
+            # No low price on the morning before getup, do heat anyway just
+            # before
+            if thishour >= config["getup"] - config["wwup"]:
+                return True
+
+        # At least one cheap hour in the night/morning, possibly before now
+        remainingmorning = list(
+            filter(lambda x: x["timestamp"].hour >= thishour, earlyprices)
+        )
+
+        if not remainingmorning:
+            # No cheap left
+            return False
+
+        if remainingmorning[0]["timestamp"].hour != thishour:
+            # At least one cheap remaining but this isn't the cheapest, do
+            # not heat
+            return False
+
     for p in prices:
-        t = dateutil.parser.parse(p["timestamp"])
-        if t.hour == thishour:
+        if p["timestamp"].hour == thishour:
             return True
+
     return False
 
 
@@ -152,7 +199,12 @@ def get_prices(db):
         raise SystemError("could not fetch electricity info")
 
     db[key] = r.text
-    return json.loads(r.text)
+
+    def fix_entry(x):
+        x["value"] = float(x["value"])
+        t["timestamp"] = dateutil.parser.parse(x["timestamp"]).astimezone()
+
+    return list(map(fix_entry, json.loads(r.text)))
 
 
 def find_controller():
@@ -164,7 +216,7 @@ def find_controller():
     return url
 
 
-def is_water_heating(url):
+def is_water_heating(url: str):
     r = requests.get(f"{url}/api/alldata")
     if r.status_code != 200:
         raise SystemError("Getting controller data failed")
@@ -172,7 +224,7 @@ def is_water_heating(url):
     return not hc["0208"] == 350
 
 
-def set_water_heating(url, ns):
+def set_water_heating(url: str, ns: bool):
     desired = 350
     if ns:
         desired = 540
@@ -195,10 +247,10 @@ if __name__ == "__main__":
     url = find_controller()
     db = dbm.open("heatcontrol.db", "c")
 
-    config = get_config()
-    (apply, correct_state) = override_active(config)
+    netconfig = get_config()
+    (apply, correct_state) = override_active(netconfig)
     if not apply:
-        correct_state = should_heat_water(db, config)
+        correct_state = should_heat_water(db, netconfig["config"])
     current_state = is_water_heating(url)
 
     logger.debug(f"Currently running for {CONTROLLER} is {current_state}\n")
