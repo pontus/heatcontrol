@@ -68,11 +68,12 @@ def override_active(config: dict):
     if not "override" in config:
         return (False, False)
 
-    now = datetime.datetime.now()
+    now = datetime.datetime.now().timestamp()
     for p in config["override"]:
         try:
-            start = dateutil.parser.parse(p["start"])
-            end = dateutil.parser.parse(p["end"])
+            start = dateutil.parser.parse(p["start"]).astimezone().timestamp()
+            end = dateutil.parser.parse(p["end"]).astimezone().timestamp()
+
             if start <= now and now <= end:
                 # Matches
                 logger.debug(f"Matching override data {p}\n")
@@ -82,15 +83,6 @@ def override_active(config: dict):
                     state = True
 
                 return True, state
-            if (
-                start.day == now.day
-                and start.month == now.month
-                and start.year == now.year
-            ) or (
-                end.day == now.day and end.month == now.month and end.year == now.year
-            ):
-                # Day matches but not within window - have it off
-                current_data = True
         except:
             pass
 
