@@ -35,12 +35,18 @@ CONTROL_BASE = (
 )
 
 
+class Price(typing.TypedDict):
+    value: float
+    timestamp: datetime.datetime
+
+
 logger = logging.getLogger()
 
 
-def get_config():
+def get_config() -> dict[str, typing.Any]:
     if not CONTROL_BASE:
-        return False
+        return {"config": defaults}
+
     logger.debug(f"Checking control data {CONTROL_BASE}/.json\n")
 
     r = requests.get(f"{CONTROL_BASE}/.json")
@@ -62,7 +68,7 @@ def get_config():
     return j
 
 
-def override_active(config: dict):
+def override_active(config: dict[str, typing.Any]) -> typing.Tuple[bool, bool]:
     current_data = False
 
     if not "override" in config:
@@ -94,7 +100,7 @@ def override_active(config: dict):
 
 def setup_logger(
     console_level=logging.DEBUG, file_level=logging.DEBUG, filename="heatcontrol.log"
-):
+) -> None:
     h = logging.StreamHandler()
     h.setLevel(console_level)
     logger.addHandler(h)
@@ -106,36 +112,41 @@ def setup_logger(
     logger.setLevel(min(file_level, console_level))
 
 
-def price_apply(x, config):
-    t = dateutil.parser.parse(x["timestamp"]).astimezone()
+def price_apply(x: Price, config: dict) -> bool:
     today = datetime.datetime.now()
-    if t.day == today.day:
+    if x["timestamp"].day == today.day:
         return True
     return False
 
 
-def filter_prices(p: list[dict[str, typing.Any]], config: dict[str, float]):
+def filter_prices(p: list[Price], config: dict[str, float]) -> list[Price]:
     p.sort(key=lambda x: x["value"])
 
-    minp = p[0]["value"]
-    cutpoint = min(
-        minp * (100 + config["cutter"]) / 100,
-        minp + config["maxdiff"],
-    )
+    minp: float = p[0]["value"]
+
+    if minp < 0:
+        cutpoint = config["maxdiff"]
+    else:
+        cutpoint = min(
+            minp * (100 + config["cutter"]) / 100,
+            minp + config["maxdiff"],
+        )
 
     # Filter out price if more than 175% of lowest
 
-    return filter(
-        lambda x: x["value"] < cutpoint or x["value"] < config["lowprice"],
-        p,
+    return list(
+        filter(
+            lambda x: x["value"] < cutpoint or x["value"] < config["lowprice"],
+            p,
+        )
     )
 
 
-def should_heat_water(db, config: dict[str, float]):
+def should_heat_water(db, config: dict[str, float]) -> bool:
     t = time.localtime().tm_hour
 
     # Evening, we want to heat no more?
-    if t <= (config["bedtime"] - config["wwcooldown"]):
+    if t >= (config["bedtime"] - config["wwcooldown"]):
         return False
 
     prices = list(filter(lambda x: price_apply(x, config), get_prices(db)))
@@ -180,26 +191,29 @@ def should_heat_water(db, config: dict[str, float]):
     return False
 
 
-def get_prices(db):
+def get_prices(db) -> list[Price]:
     key = f"prices{time.strftime('%Y%m%d')}"
     if key in db:
-        return json.loads(db[key])
-
-    logger.debug("Fetching spot prices")
-    r = requests.get(f"https://spot.utilitarian.io/electricity/SE3/latest")
-    if r.status_code != 200:
-        raise SystemError("could not fetch electricity info")
-
-    db[key] = r.text
+        pricedata = db[key]
+    else:
+        logger.debug("Fetching spot prices")
+        r = requests.get(f"https://spot.utilitarian.io/electricity/SE3/latest")
+        if r.status_code != 200:
+            raise SystemError("could not fetch electricity info")
+        pricedata = r.text
+        db[key] = pricedata
 
     def fix_entry(x):
         x["value"] = float(x["value"])
-        t["timestamp"] = dateutil.parser.parse(x["timestamp"]).astimezone()
+        x["timestamp"] = dateutil.parser.parse(x["timestamp"]).astimezone()
+        return x
 
-    return list(map(fix_entry, json.loads(r.text)))
+    fixed = list(map(fix_entry, json.loads(pricedata)))
+
+    return fixed
 
 
-def find_controller():
+def find_controller() -> str:
     "Find a heat controller locally"
 
     url = "http://192.168.25.196"
@@ -208,7 +222,7 @@ def find_controller():
     return url
 
 
-def is_water_heating(url: str):
+def is_water_heating(url: str) -> bool:
     r = requests.get(f"{url}/api/alldata")
     if r.status_code != 200:
         raise SystemError("Getting controller data failed")
@@ -216,7 +230,7 @@ def is_water_heating(url: str):
     return not hc["0208"] == 350
 
 
-def set_water_heating(url: str, ns: bool):
+def set_water_heating(url: str, ns: bool) -> None:
     desired = 350
     if ns:
         desired = 540
@@ -238,11 +252,12 @@ if __name__ == "__main__":
 
     url = find_controller()
     db = dbm.open("heatcontrol.db", "c")
+    apply = False
 
-    netconfig = get_config()
-    (apply, correct_state) = override_active(netconfig)
+    allconfig = get_config()
+    (apply, correct_state) = override_active(allconfig)
     if not apply:
-        correct_state = should_heat_water(db, netconfig["config"])
+        correct_state = should_heat_water(db, allconfig["config"])
     current_state = is_water_heating(url)
 
     logger.debug(f"Currently running for {CONTROLLER} is {current_state}\n")
