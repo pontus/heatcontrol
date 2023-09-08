@@ -158,6 +158,11 @@ def price_apply(x: Price, config: Config) -> bool:
     return False
 
 
+def comp_hour() -> float:
+    t = time.localtime()
+    return t.tm_hour + t.tm_min / 60
+
+
 def filter_prices(p: list[Price], config: Config) -> list[Price]:
     p.sort(key=lambda x: x["value"])
 
@@ -192,7 +197,7 @@ def water_prep_needed(
     config: Config,
 ) -> typing.Tuple[bool, bool]:
     "Check if we should heat now if we care about it later"
-    t = time.localtime().tm_hour
+    t = comp_hour()
 
     if t > (needhour + duration):
         # We've already passed our timewindow
@@ -208,7 +213,7 @@ def water_prep_needed(
     if t >= needhour:
         # We're in the time window and should apply heating
         for p in all_prices:
-            if p["timestamp"].hour == t and p["value"] > config["blockprice"]:
+            if p["timestamp"].hour == int(t) and p["value"] > config["blockprice"]:
                 logger.debug(
                     f"Within need, should run heater ({t}>={needhour} but expensive so skipping"
                 )
@@ -234,7 +239,7 @@ def water_prep_needed(
         # before
         if t >= needhour - preptime:
             for p in all_prices:
-                if p["timestamp"].hour == t and p["value"] > config["blockprice"]:
+                if p["timestamp"].hour == int(t) and p["value"] > config["blockprice"]:
                     logger.debug(
                         f"Within need (or prep), should run heater but expensive so skipping"
                     )
@@ -258,7 +263,7 @@ def water_prep_needed(
 
 
 def check_noneed(nn: NoNeed) -> bool:
-    t = datetime.datetime.now().hour
+    t = comp_hour()
     dow = str(datetime.datetime.now().isoweekday())
     logger.debug(f"Checking skip {nn} - {dow} in {nn['weekdays']}?")
     if dow in nn["weekdays"]:
@@ -271,7 +276,7 @@ def check_noneed(nn: NoNeed) -> bool:
 
 
 def should_heat_water(db, config: Config) -> bool:
-    t = time.localtime().tm_hour
+    t = comp_hour()
 
     # Evening, we want to heat no more?
     if t >= (config["bedtime"] - config["wwcooldown"]):
@@ -306,11 +311,11 @@ def should_heat_water(db, config: Config) -> bool:
             logger.debug(f"Authorative from prep, returning {heat}")
             return heat
 
-    # We have already checked borders and only need to see i we're
+    # We have already checked borders and only need to see if we're
     # in one of the cheap slots
 
     for p in prices:
-        if p["timestamp"].hour == t:
+        if p["timestamp"].hour == int(t):
             logger.debug(f"Found this hour ({t}) in low prices, we want ww")
             return True
 
