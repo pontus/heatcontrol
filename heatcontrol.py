@@ -227,7 +227,7 @@ def water_prep_needed(
     # Any remaining low prices before getup from now?
     earlierprices = list(
         filter(
-            lambda x: x["timestamp"].hour < needhour and x["timestamp"].hour >= t,
+            lambda x: x["timestamp"].hour < needhour and x["timestamp"].hour >= int(t),
             low_prices,
         )
     )
