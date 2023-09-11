@@ -67,6 +67,9 @@ class NetConfig(typing.TypedDict):
     override: list[Override]
 
 
+Database: typing.TypeAlias = "dbm._Database"
+
+
 defaults: Config = {
     "cutter": 60,
     "maxdiff": 50,
@@ -138,7 +141,9 @@ def override_active(config: NetConfig) -> typing.Tuple[bool, bool]:
 
 
 def setup_logger(
-    console_level=logging.DEBUG, file_level=logging.DEBUG, filename="heatcontrol.log"
+    console_level: int = logging.DEBUG,
+    file_level: int = logging.DEBUG,
+    filename: str = "heatcontrol.log",
 ) -> None:
     h = logging.StreamHandler()
     h.setLevel(console_level)
@@ -275,7 +280,7 @@ def check_noneed(nn: NoNeed) -> bool:
     return False
 
 
-def should_heat_water(db, config: Config) -> bool:
+def should_heat_water(db: Database, config: Config) -> bool:
     t = comp_hour()
 
     # Evening, we want to heat no more?
@@ -322,7 +327,7 @@ def should_heat_water(db, config: Config) -> bool:
     return False
 
 
-def get_prices(db) -> list[Price]:
+def get_prices(db: Database) -> list[Price]:
     key = f"prices{time.strftime('%Y%m%d')}"
     if key in db:
         pricedata = db[key]
@@ -331,13 +336,16 @@ def get_prices(db) -> list[Price]:
         r = requests.get(f"https://spot.utilitarian.io/electricity/SE3/latest")
         if r.status_code != 200:
             raise SystemError("could not fetch electricity info")
-        pricedata = r.text
+
+        pricedata = bytes(r.text, "ascii")
         db[key] = pricedata
 
-    def fix_entry(x):
-        x["value"] = float(x["value"])
-        x["timestamp"] = dateutil.parser.parse(x["timestamp"]).astimezone()
-        return x
+    def fix_entry(x: dict[str, str]) -> Price:
+        r = Price(
+            value=float(x["value"]),
+            timestamp=dateutil.parser.parse(x["timestamp"]).astimezone(),
+        )
+        return r
 
     fixed = list(map(fix_entry, json.loads(pricedata)))
 
