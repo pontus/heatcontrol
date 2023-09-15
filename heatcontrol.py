@@ -22,6 +22,12 @@ CONTROL_BASE = (
     "https://heatcontrol-41ec2-default-rtdb.europe-west1.firebasedatabase.app/"
 )
 
+# Curve documentation:
+# https://cdn.jseducation.se/files/pages/carrier-anv.pdf
+#
+# Registers:
+# https://online.husdata.se/h-docs/C00.pdf
+
 
 class Price(typing.TypedDict):
     value: float
@@ -47,6 +53,11 @@ class Override(typing.TypedDict):
     state: bool
 
 
+class HeatValues(typing.TypedDict):
+    curve: int
+    parallel: int
+
+
 class Config(typing.TypedDict):
     cutter: float
     maxdiff: float
@@ -58,6 +69,11 @@ class Config(typing.TypedDict):
     wwup: float
     lowprice: float
     blockprice: float
+    heatdefaultcurve: float
+    heatcheappara: float
+    heatexpensivepara: float
+    heatcheapcurve: float
+    heatexpensivecurve: float
     noneed: list[NoNeed]
     prepww: list[Prep]
 
@@ -83,6 +99,11 @@ defaults: Config = {
     "blockprice": 150,
     "noneed": [],
     "prepww": [],
+    "heatdefaultcurve": 22,
+    "heatcheappara": 20,
+    "heatexpensivepara": -40,
+    "heatcheapcurve": 3,
+    "heatexpensivecurve": -4,
 }
 
 
@@ -386,6 +407,55 @@ def set_water_heating(url: str, ns: bool) -> None:
     return
 
 
+def set_curve(url: str, c: HeatValues) -> None:
+    r = requests.get(f"{url}/api/alldata")
+    if r.status_code != 200:
+        raise SystemError("Getting controller data failed")
+    hc = r.json()
+
+    if hc["2205"] != c["curve"]:
+        logger.debug(f"Need to update curve - current {hc['2205']}, desired {c['curve']}")
+
+        r = requests.get(f"{url}/api/set?idx=2205&val={c['curve']}")
+        if r.status_code != 200:
+            raise SystemError("Setting controller data failed")
+    if hc["0207"] != c["parallel"]:
+        logger.debug(f"Need to update parallel - current {hc['0207']}, desired {c['parallel']}")
+        r = requests.get(f"{url}/api/set?idx=0207&val={c['parallel']}")
+        if r.status_code != 200:
+            raise SystemError("Setting controller data failed")
+    return
+
+
+def get_heat_curve(db: Database, config: Config) -> HeatValues:
+    t = comp_hour()
+    c = HeatValues(curve=int(config["heatdefaultcurve"]), parallel=0)
+
+    all_prices = get_prices(db)
+    prices = list(filter(lambda x: price_apply(x, config), all_prices))
+    logger.debug(f"Prices for today are {prices}")
+
+    prices = list(filter_prices(prices, config))
+    logger.debug(f"Prices after filtering for low are {prices}")
+
+    # We're in low price period
+    for p in prices:
+        if int(t) == p["timestamp"].hour:
+            c["curve"] += int(config["heatcheapcurve"])
+            c["parallel"] += int(config["heatcheappara"])
+
+            logger.debug(f"Cheap hour, returning heating settings {c}")
+
+            return c
+
+    c["curve"] += int(config["heatexpensivecurve"])
+    c["parallel"] += int(config["heatexpensivepara"])
+
+    logger.debug(f"Expensive hour, returning heating settings {c}")
+
+    return c
+
+
 if __name__ == "__main__":
     setup_logger()
 
@@ -401,6 +471,9 @@ if __name__ == "__main__":
 
     logger.debug(f"Currently running for {CONTROLLER} is {current_state}\n")
     logger.debug(f"Should be running for {CONTROLLER} is {correct_state}\n")
+
+    c = get_heat_curve(db, allconfig["config"])
+    set_curve(url, c)
 
     # correct_state = True
     if current_state != correct_state:
