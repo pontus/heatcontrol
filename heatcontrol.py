@@ -600,13 +600,9 @@ def get_heat_curve_from_temp(db: Database, c: HeatValues, opttemp: float):
             c['parallel'] = int(opttemp - 20)*10
             c["curve"] += int(10*difftemp)
         else:
-            #print("Temp gammal")
-            #print(nu - natemps['uppe']['time'])
             return c
     else:
-        #print("Temp okänd")
         return c
-    #print(opttemp)
     return c
 
 
@@ -630,12 +626,7 @@ if __name__ == "__main__":
     c = get_heat_curve(db, allconfig["config"])
     opttemp = get_opttemp(db, allconfig["config"])
 
-    #print(get_netatmo_temps(db))
-    #print(c)
     c = get_heat_curve_from_temp(db, c, opttemp)
-    #print(c)
-    #print(get_heat_curve_from_temp(db, c, 25))
-    #print(get_heat_curve_from_temp(db, c, 15))
 
     set_curve(url, c)
 
