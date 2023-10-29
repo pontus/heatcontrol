@@ -81,6 +81,9 @@ class Config(typing.TypedDict):
     heatexpensivecurve: float
     noneed: list[NoNeed]
     prepww: list[Prep]
+    opttemp: float
+    tempexpensive: float
+    tempcheap: float
 
 
 class NetConfig(typing.TypedDict):
@@ -109,6 +112,9 @@ defaults: Config = {
     "heatexpensivepara": -40,
     "heatcheapcurve": 3,
     "heatexpensivecurve": -4,
+    "opttemp": 20.5,
+    "tempexpensive": 19.8,
+    "tempcheap": 21.0,
 }
 
 
@@ -530,6 +536,32 @@ def set_curve(url: str, c: HeatValues) -> None:
     return
 
 
+def get_opttemp(db: Database, config: Config) -> float:
+    t = comp_hour()
+    opttemp = config["opttemp"]
+
+    all_prices = get_prices(db)
+    prices = list(filter(lambda x: price_apply(x, config), all_prices))
+    logger.debug(f"Prices for today are {prices}")
+
+    prices = list(filter_prices(prices, config))
+    logger.debug(f"Prices after filtering for low are {prices}")
+
+    # We're in low price period
+    for p in prices:
+        if int(t) == p["timestamp"].hour:
+            opttemp = config["tempcheap"]
+
+            logger.debug(f"Cheap hour, returning optimal temperature {opttemp}")
+
+            return opttemp
+
+    ## Det är inte alltid dyrt!
+    ## opttemp = config['tempexpensive']
+    #logger.debug(f"Expensive hour, returning optimal temperature {opttemp}")
+
+    return opttemp
+
 def get_heat_curve(db: Database, config: Config) -> HeatValues:
     t = comp_hour()
     c = HeatValues(curve=int(config["heatdefaultcurve"]), parallel=0)
@@ -558,6 +590,22 @@ def get_heat_curve(db: Database, config: Config) -> HeatValues:
 
     return c
 
+def get_heat_curve_from_temp(db: Database, c: HeatValues, opttemp: float):
+    
+    natemps = get_netatmo_temps(db)
+    nu = time.time()
+    if 'uppe' in natemps:
+        if (nu - natemps['uppe']['time'])<3600:
+            difftemp = opttemp - natemps['uppe']['temperature']
+            c['parallel'] = int(opttemp - 20)*10
+            c["curve"] += int(10*difftemp)
+        else:
+            return c
+    else:
+        return c
+    return c
+
+
 
 if __name__ == "__main__":
     setup_logger()
@@ -576,6 +624,10 @@ if __name__ == "__main__":
     logger.debug(f"Should be running for {CONTROLLER} is {correct_state}\n")
 
     c = get_heat_curve(db, allconfig["config"])
+    opttemp = get_opttemp(db, allconfig["config"])
+
+    c = get_heat_curve_from_temp(db, c, opttemp)
+
     set_curve(url, c)
 
     # correct_state = True
