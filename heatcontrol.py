@@ -593,16 +593,23 @@ def get_heat_curve(db: Database, config: Config) -> HeatValues:
 def get_heat_curve_from_temp(db: Database, c: HeatValues, opttemp: float):
     
     natemps = get_netatmo_temps(db)
+
+    logger.debug(f"Temp from netatmo: {natemps}, optimal temp is {opttemp}")
+
     nu = time.time()
     if 'uppe' in natemps:
         if (nu - natemps['uppe']['time'])<3600:
             difftemp = opttemp - natemps['uppe']['temperature']
+            logger.debug(f"Adjustment from netatmo is {difftemp}")
             c['parallel'] = int(opttemp - 20)*10
             c["curve"] += int(10*difftemp)
+            logger.debug(f"New curve is {c}")
+
         else:
-            return c
+            logger.debug("Temperature from netatmo is too old")
     else:
-        return c
+        logger.debug("No reading from netatmo for uppe")
+
     return c
 
 
