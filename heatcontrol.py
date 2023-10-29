@@ -81,6 +81,7 @@ class Config(typing.TypedDict):
     heatexpensivecurve: float
     noneed: list[NoNeed]
     prepww: list[Prep]
+    opttemp: float
 
 
 class NetConfig(typing.TypedDict):
@@ -109,6 +110,9 @@ defaults: Config = {
     "heatexpensivepara": -40,
     "heatcheapcurve": 3,
     "heatexpensivecurve": -4,
+    "opttemp": 20.5,
+    "tempexpensive": 19.8,
+    "tempcheap": 21.0,
 }
 
 
@@ -558,6 +562,22 @@ def get_heat_curve(db: Database, config: Config) -> HeatValues:
 
     return c
 
+def get_heat_curve_from_temp(db: Database, c: HeatValues, opttemp: float):
+    
+    natemps = get_netatmo_temps(db)
+    nu = time.time()
+    if 'uppe' in natemps:
+        if (nu - natemps['uppe']['time'])<3600:
+            difftemp = opttemp - natemps['uppe']['temperature']
+            c['parallel'] = opttemp
+            c["curve"] += 10*difftemp
+        else:
+            return c
+    else:
+        return c
+    return c
+
+
 
 if __name__ == "__main__":
     setup_logger()
@@ -576,6 +596,12 @@ if __name__ == "__main__":
     logger.debug(f"Should be running for {CONTROLLER} is {correct_state}\n")
 
     c = get_heat_curve(db, allconfig["config"])
+
+    #print(get_netatmo_temps(db))
+    #print(c)
+    c = get_heat_curve_from_temp(db, c, allconfig["config"]["opttemp"])
+    #print(c)
+
     set_curve(url, c)
 
     # correct_state = True
