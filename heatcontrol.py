@@ -40,7 +40,11 @@ class NoNeed(typing.TypedDict):
     end: float
     weekdays: str
 
-
+class TempAdjustment(typing.TypedDict):
+    starthour: float
+    endhour: float
+    weekdays: str
+    adjustment: float
 class Prep(typing.TypedDict):
     earliest: float
     duration: float
@@ -80,6 +84,7 @@ class Config(typing.TypedDict):
     heatcheapcurve: float
     heatexpensivecurve: float
     noneed: list[NoNeed]
+    tempadjustments: list[TempAdjustment]
     prepww: list[Prep]
     opttemp: float
     tempexpensive: float
@@ -115,6 +120,7 @@ defaults: Config = {
     "opttemp": 20.5,
     "tempexpensive": 19.8,
     "tempcheap": 21.0,
+    "tempadjustments": []
 }
 
 
@@ -536,6 +542,21 @@ def set_curve(url: str, c: HeatValues) -> None:
     return
 
 
+def get_temp_adjustment(config: Config) -> float:
+    t = comp_hour()
+    dow = str(datetime.datetime.now().isoweekday())
+
+    for p in config["tempadjustments"]:
+        logger.debug(f"Checking temperature adjustment {p}")
+        if dow in p["weekdays"]:
+            logger.debug(f"Checking {t} between {p['starthour']} and {p['endhour']}?")
+            if p["starthour"] <= t and p["endhour"] >= t:
+                logger.debug(f"Yes, adjustment is {p['adjustment']}")
+                # Within window
+                return p["adjustment"]
+    return 0
+
+
 def get_opttemp(db: Database, config: Config) -> float:
     t = comp_hour()
     opttemp = config["opttemp"]
@@ -558,9 +579,10 @@ def get_opttemp(db: Database, config: Config) -> float:
 
     ## Det är inte alltid dyrt!
     ## opttemp = config['tempexpensive']
-    #logger.debug(f"Expensive hour, returning optimal temperature {opttemp}")
+    # logger.debug(f"Expensive hour, returning optimal temperature {opttemp}")
 
     return opttemp
+
 
 def get_heat_curve(db: Database, config: Config) -> HeatValues:
     t = comp_hour()
@@ -590,19 +612,19 @@ def get_heat_curve(db: Database, config: Config) -> HeatValues:
 
     return c
 
+
 def get_heat_curve_from_temp(db: Database, c: HeatValues, opttemp: float):
-    
     natemps = get_netatmo_temps(db)
 
     logger.debug(f"Temp from netatmo: {natemps}, optimal temp is {opttemp}")
 
     nu = time.time()
-    if 'uppe' in natemps:
-        if (nu - natemps['uppe']['time'])<3600:
-            difftemp = opttemp - natemps['uppe']['temperature']
+    if "uppe" in natemps:
+        if (nu - natemps["uppe"]["time"]) < 3600:
+            difftemp = opttemp - natemps["uppe"]["temperature"]
             logger.debug(f"Adjustment from netatmo is {difftemp}")
-            c['parallel'] = int(opttemp - 20)*10
-            c["curve"] += int(10*difftemp)
+            c["parallel"] = int(opttemp - 20) * 10
+            c["curve"] += int(10 * difftemp)
             logger.debug(f"New curve is {c}")
 
         else:
@@ -611,7 +633,6 @@ def get_heat_curve_from_temp(db: Database, c: HeatValues, opttemp: float):
         logger.debug("No reading from netatmo for uppe")
 
     return c
-
 
 
 if __name__ == "__main__":
