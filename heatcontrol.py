@@ -597,7 +597,7 @@ def get_heat_curve_from_temp(db: Database, c: HeatValues, opttemp: float):
     if 'uppe' in natemps:
         if (nu - natemps['uppe']['time'])<3600:
             difftemp = opttemp - natemps['uppe']['temperature']
-            c['parallel'] = opttemp - 20
+            c['parallel'] = int(opttemp - 20)*10
             c["curve"] += int(10*difftemp)
         else:
             #print("Temp gammal")
