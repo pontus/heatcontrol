@@ -82,6 +82,8 @@ class Config(typing.TypedDict):
     noneed: list[NoNeed]
     prepww: list[Prep]
     opttemp: float
+    tempexpensive: float
+    tempcheap: float
 
 
 class NetConfig(typing.TypedDict):
@@ -534,6 +536,32 @@ def set_curve(url: str, c: HeatValues) -> None:
     return
 
 
+def get_opttemp(db: Database, config: Config) -> float:
+    t = comp_hour()
+    opttemp = config["opttemp"]
+
+    all_prices = get_prices(db)
+    prices = list(filter(lambda x: price_apply(x, config), all_prices))
+    logger.debug(f"Prices for today are {prices}")
+
+    prices = list(filter_prices(prices, config))
+    logger.debug(f"Prices after filtering for low are {prices}")
+
+    # We're in low price period
+    for p in prices:
+        if int(t) == p["timestamp"].hour:
+            opttemp = config["tempcheap"]
+
+            logger.debug(f"Cheap hour, returning optimal temperature {opttemp}")
+
+            return opttemp
+
+    ## Det är inte alltid dyrt!
+    ## opttemp = config['tempexpensive']
+    #logger.debug(f"Expensive hour, returning optimal temperature {opttemp}")
+
+    return opttemp
+
 def get_heat_curve(db: Database, config: Config) -> HeatValues:
     t = comp_hour()
     c = HeatValues(curve=int(config["heatdefaultcurve"]), parallel=0)
@@ -569,12 +597,16 @@ def get_heat_curve_from_temp(db: Database, c: HeatValues, opttemp: float):
     if 'uppe' in natemps:
         if (nu - natemps['uppe']['time'])<3600:
             difftemp = opttemp - natemps['uppe']['temperature']
-            c['parallel'] = opttemp
-            c["curve"] += 10*difftemp
+            c['parallel'] = opttemp - 20
+            c["curve"] += int(10*difftemp)
         else:
+            #print("Temp gammal")
+            #print(nu - natemps['uppe']['time'])
             return c
     else:
+        #print("Temp okänd")
         return c
+    #print(opttemp)
     return c
 
 
@@ -596,11 +628,14 @@ if __name__ == "__main__":
     logger.debug(f"Should be running for {CONTROLLER} is {correct_state}\n")
 
     c = get_heat_curve(db, allconfig["config"])
+    opttemp = get_opttemp(db, allconfig["config"])
 
     #print(get_netatmo_temps(db))
     #print(c)
-    c = get_heat_curve_from_temp(db, c, allconfig["config"]["opttemp"])
+    c = get_heat_curve_from_temp(db, c, opttemp)
     #print(c)
+    #print(get_heat_curve_from_temp(db, c, 25))
+    #print(get_heat_curve_from_temp(db, c, 15))
 
     set_curve(url, c)
 
