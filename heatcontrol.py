@@ -166,7 +166,7 @@ def get_netatmo_temps(db: Database) -> NATemps:
     if key in db:
         natemps = json.loads(db[key])
 
-    if natemps and (natemps["last_store"] + 10 * 60) < t:
+    if natemps and (natemps["last_store"] + 10 * 60) > t:
         # We have recent data
         return natemps
 
