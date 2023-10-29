@@ -12,6 +12,7 @@ import datetime
 import sys
 import logging
 import typing
+import yaml
 
 MAX_WAIT = 150
 
@@ -56,6 +57,10 @@ class Override(typing.TypedDict):
 class HeatValues(typing.TypedDict):
     curve: int
     parallel: int
+
+
+class NATemps(typing.Dict):
+    pass
 
 
 class Config(typing.TypedDict):
@@ -108,6 +113,100 @@ defaults: Config = {
 
 
 logger = logging.getLogger()
+
+
+def get_netatmo_token(db: Database):
+    key = "natoken"
+
+    natoken: typing.Optional[typing.Dict] = None
+    if key in db:
+        natoken = json.loads(db[key])
+
+    if natoken and natoken["expire_at"] < time.time():
+        return natoken
+
+    with open("config.yaml") as f:
+        naconfig = yaml.safe_load(f)
+
+    t = time.time()
+
+    d = {
+        "grant_type": "refresh_token",
+        "refresh_token": naconfig["refreshtoken"],
+        "client_id": naconfig["clientid"],
+        "client_secret": naconfig["clientsecret"],
+    }
+
+    r = requests.request(
+        method="POST",
+        url="https://api.netatmo.com/oauth2/token",
+        headers={
+            "Content-type": "application/x-www-form-urlencoded",
+        },
+        data=d,
+    )
+
+    if not r.ok:
+        raise SystemError("Failed to refresh token")
+
+    token = r.json()
+    token["expire_at"] = t + token["expire_in"]
+
+    db[key] = json.dumps(token)
+    return token
+
+
+def get_netatmo_temps(db: Database) -> NATemps:
+    """Returns data from netatmo, note that data may not be provided or may be
+    out of date.
+    """
+    key = "natemps"
+    t = time.time()
+    natemps: NATemps = NATemps()
+    if key in db:
+        natemps = json.loads(db[key])
+
+    if natemps and (natemps["last_store"] + 10 * 60) < t:
+        # We have recent data
+        return natemps
+
+    token = get_netatmo_token(db)
+    r = requests.request(
+        method="GET",
+        url="https://api.netatmo.com/api/getstationsdata",
+        headers={"Authorization": f"Bearer {token['access_token']}"},
+    )
+
+    if not r.ok:
+        # On error, we don't fail but rather do not return any data
+        return NATemps()
+
+    # Only consider one device for now
+    nadata = r.json()["body"]["devices"][0]
+    fill_netatmo_module_data(nadata, natemps)
+
+    for p in nadata["modules"]:
+        fill_netatmo_module_data(p, natemps)
+
+    natemps["last_store"] = time.time()
+    db[key] = json.dumps(natemps)
+
+    return natemps
+
+
+def fill_netatmo_module_data(na: typing.Dict, t: NATemps) -> None:
+    "Fill in temperature from netatmo details"
+
+    name = na["module_name"]
+
+    if not "dashboard_data" in na:
+        return
+
+    if "Temperature" in na["dashboard_data"]:
+        t[name] = {
+            "temperature": na["dashboard_data"]["Temperature"],
+            "time": na["dashboard_data"]["time_utc"],
+        }
 
 
 def get_config() -> NetConfig:
@@ -414,13 +513,17 @@ def set_curve(url: str, c: HeatValues) -> None:
     hc = r.json()
 
     if hc["2205"] != c["curve"]:
-        logger.debug(f"Need to update curve - current {hc['2205']}, desired {c['curve']}")
+        logger.debug(
+            f"Need to update curve - current {hc['2205']}, desired {c['curve']}"
+        )
 
         r = requests.get(f"{url}/api/set?idx=2205&val={c['curve']}")
         if r.status_code != 200:
             raise SystemError("Setting controller data failed")
     if hc["0207"] != c["parallel"]:
-        logger.debug(f"Need to update parallel - current {hc['0207']}, desired {c['parallel']}")
+        logger.debug(
+            f"Need to update parallel - current {hc['0207']}, desired {c['parallel']}"
+        )
         r = requests.get(f"{url}/api/set?idx=0207&val={c['parallel']}")
         if r.status_code != 200:
             raise SystemError("Setting controller data failed")
