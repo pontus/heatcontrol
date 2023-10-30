@@ -559,6 +559,13 @@ def get_current_water_temp(url: str) -> float:
 def set_water_temp(url: str, ns: float) -> None:
     desired = int(ns * 10)
 
+    if desired < 350:
+        logger.debug(f"Adjusting bad water temperature {desired} to 350")
+        desired = 350
+    if desired > 540:
+        logger.debug(f"Adjusting bad water temperature {desired} to 540")
+        desired = 540
+
     r = requests.get(f"{url}/api/alldata")
     if r.status_code != 200:
         raise SystemError("Getting controller data failed")
@@ -572,24 +579,41 @@ def set_water_temp(url: str, ns: float) -> None:
 
 
 def set_curve(url: str, c: HeatValues) -> None:
+    curve =c["curve"]
+    para = c["parallel"]
+
+    if curve < 0:
+        logger.debug(f"Adjusting bad curve {curve} to 0")
+        curve =0
+    if curve > 100:
+        logger.debug(f"Adjusting bad curve {curve} to 100")
+        curve = 100
+
+    if para < -100:
+        logger.debug(f"Adjusting bad parallel {para} to -100")
+        para = -100
+    if para > 100:
+        logger.debug(f"Adjusting bad parallel {para} to 100")
+        para = 100
+
     r = requests.get(f"{url}/api/alldata")
     if r.status_code != 200:
         raise SystemError("Getting controller data failed")
     hc = r.json()
 
-    if hc["2205"] != c["curve"]:
+    if hc["2205"] != curve:
         logger.debug(
-            f"Need to update curve - current {hc['2205']}, desired {c['curve']}"
+            f"Need to update curve - current {hc['2205']}, desired {curve}"
         )
 
-        r = requests.get(f"{url}/api/set?idx=2205&val={c['curve']}")
+        r = requests.get(f"{url}/api/set?idx=2205&val={curve}")
         if r.status_code != 200:
             raise SystemError("Setting controller data failed")
-    if hc["0207"] != c["parallel"]:
+    if hc["0207"] != para:
         logger.debug(
-            f"Need to update parallel - current {hc['0207']}, desired {c['parallel']}"
+            f"Need to update parallel - current {hc['0207']}, desired {para}"
         )
-        r = requests.get(f"{url}/api/set?idx=0207&val={c['parallel']}")
+        r = requests.get(f"{url}/api/set?idx=0207&val={para}")
         if r.status_code != 200:
             raise SystemError("Setting controller data failed")
     return
