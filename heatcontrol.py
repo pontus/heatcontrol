@@ -58,7 +58,9 @@ class Prep(typing.TypedDict):
 class Override(typing.TypedDict):
     start: str
     end: str
-    state: bool
+    wwtemp: float
+    curve: float
+    para: float
 
 
 class HeatValues(typing.TypedDict):
@@ -80,18 +82,24 @@ class Config(typing.TypedDict):
     wwcooldown: float
     wwup: float
     lowprice: float
+    highprice: float
     blockprice: float
     heatdefaultcurve: float
+    heatdefaultpara: float
     heatcheappara: float
     heatexpensivepara: float
     heatcheapcurve: float
     heatexpensivecurve: float
+    wwcheaptemp: float
+    wwexpensivetemp: float
+    wwdefaulttemp: float
     noneed: list[NoNeed]
     tempadjustments: list[TempAdjustment]
     prepww: list[Prep]
     opttemp: float
     tempexpensive: float
     tempcheap: float
+    tempdefault: float
 
 
 class NetConfig(typing.TypedDict):
@@ -112,10 +120,12 @@ defaults: Config = {
     "wwcooldown": 2,
     "wwup": 1,
     "lowprice": 35,
+    "highprice": 80,
     "blockprice": 150,
     "noneed": [],
     "prepww": [],
     "heatdefaultcurve": 22,
+    "heatdefaultpara": 0,
     "heatcheappara": 20,
     "heatexpensivepara": -40,
     "heatcheapcurve": 3,
@@ -123,7 +133,11 @@ defaults: Config = {
     "opttemp": 20.5,
     "tempexpensive": 19.8,
     "tempcheap": 21.0,
+    "tempdefault": 20.0,
     "tempadjustments": [],
+    "wwcheaptemp": 54,
+    "wwdefaulttemp": 42,
+    "wwexpensivetemp": 35,
 }
 
 
@@ -245,11 +259,10 @@ def get_config() -> NetConfig:
     return j
 
 
-def override_active(config: NetConfig) -> typing.Tuple[bool, bool]:
-    current_data = False
-
+def override_active(config: NetConfig) -> typing.Tuple[bool, float, HeatValues]:
+    "Check if there is any active override and return values from it"
     if not "override" in config:
-        return (False, False)
+        return (False, 0)
 
     now = datetime.datetime.now().timestamp()
     for p in config["override"]:
@@ -261,18 +274,20 @@ def override_active(config: NetConfig) -> typing.Tuple[bool, bool]:
                 # Matches
                 logger.debug(f"Matching override data {p}\n")
 
-                state = False
-                if p["state"] == True or p["state"] == "on" or p["state"] == "1":
-                    state = True
-
-                return True, state
+                return (
+                    True,
+                    p["wwtemp"],
+                    HeatValues(
+                        curve=int(p["curve"] * 10), parallel=int(p["para"] * 10)
+                    ),
+                )
         except:
             pass
 
-    logger.debug(f"Returning form override check - override is {current_data}\n")
+    logger.debug(f"No override found")
 
     # Override info but no info for now, leave off
-    return (current_data, False)
+    return (False, 0, HeatValues(curve=0, parallel=0))
 
 
 def setup_logger(
@@ -303,7 +318,8 @@ def comp_hour() -> float:
     return t.tm_hour + t.tm_min / 60
 
 
-def filter_prices(p: list[Price], config: Config) -> list[Price]:
+def filter_prices_low(p: list[Price], config: Config) -> list[Price]:
+    "Filter out list of low price points"
     p.sort(key=lambda x: x["value"])
 
     minp: float = p[0]["value"]
@@ -317,11 +333,33 @@ def filter_prices(p: list[Price], config: Config) -> list[Price]:
             config["blockprice"],
         )
 
-    # Filter out price if more than 175% of lowest
-
     return list(
         filter(
             lambda x: x["value"] < cutpoint or x["value"] < config["lowprice"],
+            p,
+        )
+    )
+
+
+def filter_prices_high(p: list[Price], config: Config) -> list[Price]:
+    "Return the list of high price points"
+    p.sort(key=lambda x: x["value"])
+
+    minp: float = p[0]["value"]
+
+    if minp < 0:
+        cutpoint = config["maxdiff"]
+    else:
+        cutpoint = min(
+            minp * (100 + 1.4 * config["cutter"]) / 100,
+            minp + 1.4 * config["maxdiff"],
+            config["blockprice"],
+            config["highprice"],
+        )
+
+    return list(
+        filter(
+            lambda x: x["value"] > cutpoint,
             p,
         )
     )
@@ -415,7 +453,7 @@ def check_noneed(nn: NoNeed) -> bool:
     return False
 
 
-def should_heat_water(db: Database, config: Config) -> bool:
+def get_water_temp(db: Database, config: Config) -> float:
     t = comp_hour()
 
     # Evening, we want to heat no more?
@@ -430,14 +468,16 @@ def should_heat_water(db: Database, config: Config) -> bool:
     prices = list(filter(lambda x: price_apply(x, config), all_prices))
     logger.debug(f"Prices for today are {prices}")
 
-    prices = list(filter_prices(prices, config))
+    prices_low = list(filter_prices_low(prices, config))
     logger.debug(f"Prices after filtering for low are {prices}")
+    prices_high = list(filter_prices_high(prices, config))
+    logger.debug(f"Prices after filtering for high are {prices}")
 
     for check_nn in config["noneed"]:
         logger.debug(f"Checking skip time {check_nn}")
         if check_noneed(check_nn):
             logger.debug(f"Skipping")
-            return False
+            return config["wwexpensivetemp"]
 
     # Check if should heat as preparation
 
@@ -447,19 +487,31 @@ def should_heat_water(db: Database, config: Config) -> bool:
         )
         logger.debug(f"Prep check for ({check_prep}) gave {auth},{heat}")
 
-        if auth:
-            logger.debug(f"Authorative from prep, returning {heat}")
-            return heat
+        if auth and heat:
+            logger.debug(
+                f"Authorative need to prep warmwater, returning {config['wwcheaptemp']}"
+            )
+            return config["wwcheaptemp"]
 
     # We have already checked borders and only need to see if we're
     # in one of the cheap slots
 
-    for p in prices:
+    for p in prices_low:
         if p["timestamp"].hour == int(t):
-            logger.debug(f"Found this hour ({t}) in low prices, we want ww")
-            return True
+            logger.debug(
+                f"Found this hour ({t}) in low prices, returning {config['wwcheaptemp']}"
+            )
+            return config["wwcheaptemp"]
 
-    return False
+    for p in prices_high:
+        if p["timestamp"].hour == int(t):
+            logger.debug(
+                f"Found this hour ({t}) in high prices, returning {config['wwexpensivetemp']}"
+            )
+            return config["wwexpensivetemp"]
+
+    logger.debug(f"No special case, returning {config['wwdefaulttemp']}")
+    return config["wwdefaulttemp"]
 
 
 def get_prices(db: Database) -> list[Price]:
@@ -496,18 +548,16 @@ def find_controller() -> str:
     return url
 
 
-def is_water_heating(url: str) -> bool:
+def get_current_water_temp(url: str) -> float:
     r = requests.get(f"{url}/api/alldata")
     if r.status_code != 200:
         raise SystemError("Getting controller data failed")
     hc = r.json()
-    return not hc["0208"] == 350
+    return hc["0208"] / 10
 
 
-def set_water_heating(url: str, ns: bool) -> None:
-    desired = 350
-    if ns:
-        desired = 540
+def set_water_temp(url: str, ns: float) -> None:
+    desired = int(ns * 10)
 
     r = requests.get(f"{url}/api/alldata")
     if r.status_code != 200:
@@ -568,11 +618,13 @@ def get_opttemp(db: Database, config: Config) -> float:
     prices = list(filter(lambda x: price_apply(x, config), all_prices))
     logger.debug(f"Prices for today are {prices}")
 
-    prices = list(filter_prices(prices, config))
-    logger.debug(f"Prices after filtering for low are {prices}")
+    prices_low = list(filter_prices_low(prices, config))
+    logger.debug(f"Prices after filtering for low are {prices_low}")
+    prices_high = list(filter_prices_high(prices, config))
+    logger.debug(f"Prices after filtering for high are {prices_high}")
 
     # We're in low price period
-    for p in prices:
+    for p in prices_low:
         if int(t) == p["timestamp"].hour:
             opttemp = config["tempcheap"]
 
@@ -580,26 +632,38 @@ def get_opttemp(db: Database, config: Config) -> float:
 
             return opttemp
 
-    ## Det är inte alltid dyrt!
-    ## opttemp = config['tempexpensive']
-    # logger.debug(f"Expensive hour, returning optimal temperature {opttemp}")
+    # We're in low price period
+    for p in prices_high:
+        if int(t) == p["timestamp"].hour:
+            opttemp = config["tempexpensive"]
+            logger.debug(f"Expensive hour, returning optimal temperature {opttemp}")
+            return opttemp
+
+    opttemp = config["tempdefault"]
+    logger.debug(
+        f"Neither cheap nor expensive hour, returning optimal temperature {opttemp}"
+    )
 
     return opttemp
 
 
 def get_heat_curve(db: Database, config: Config) -> HeatValues:
     t = comp_hour()
-    c = HeatValues(curve=int(config["heatdefaultcurve"]), parallel=0)
+    c = HeatValues(
+        curve=int(config["heatdefaultcurve"]), parallel=int(config["heatdefaultpara"])
+    )
 
     all_prices = get_prices(db)
     prices = list(filter(lambda x: price_apply(x, config), all_prices))
     logger.debug(f"Prices for today are {prices}")
 
-    prices = list(filter_prices(prices, config))
-    logger.debug(f"Prices after filtering for low are {prices}")
+    prices_low = list(filter_prices_low(prices, config))
+    logger.debug(f"Prices after filtering for low are {prices_low}")
+    prices_high = list(filter_prices_high(prices, config))
+    logger.debug(f"Prices after filtering for high are {prices_high}")
 
     # We're in low price period
-    for p in prices:
+    for p in prices_low:
         if int(t) == p["timestamp"].hour:
             c["curve"] += int(config["heatcheapcurve"])
             c["parallel"] += int(config["heatcheappara"])
@@ -608,10 +672,19 @@ def get_heat_curve(db: Database, config: Config) -> HeatValues:
 
             return c
 
-    c["curve"] += int(config["heatexpensivecurve"])
-    c["parallel"] += int(config["heatexpensivepara"])
+    # We're in high price period
+    for p in prices_high:
+        if int(t) == p["timestamp"].hour:
+            c["curve"] += int(config["heatexpensivecurve"])
+            c["parallel"] += int(config["heatexpensivepara"])
 
-    logger.debug(f"Expensive hour, returning heating settings {c}")
+            logger.debug(f"Expensive hour, returning heating settings {c}")
+
+            return c
+
+    logger.debug(
+        f"Neither cheap nor expensive hour, returning default heating settings {c}"
+    )
 
     return c
 
@@ -619,6 +692,7 @@ def get_heat_curve(db: Database, config: Config) -> HeatValues:
 def get_heat_curve_from_temp(db: Database, c: HeatValues, opttemp: float):
     natemps = get_netatmo_temps(db)
 
+    logger.debug(f"Curve input is {c}")
     logger.debug(f"Temp from netatmo: {natemps}, optimal temp is {opttemp}")
 
     nu = time.time()
@@ -646,27 +720,30 @@ if __name__ == "__main__":
     apply = False
 
     allconfig = get_config()
-    (apply, correct_state) = override_active(allconfig)
+    (apply, correct_temp, c) = override_active(allconfig)
+
     if not apply:
-        correct_state = should_heat_water(db, allconfig["config"])
-    current_state = is_water_heating(url)
+        logger.debug("Override is not active, calculating values")
 
-    logger.debug(f"Currently running for {CONTROLLER} is {current_state}\n")
-    logger.debug(f"Should be running for {CONTROLLER} is {correct_state}\n")
+        correct_temp = get_water_temp(db, allconfig["config"])
+        c = get_heat_curve(db, allconfig["config"])
+        opttemp = get_opttemp(db, allconfig["config"]) + get_temp_adjustment(
+            allconfig["config"]
+        )
 
-    c = get_heat_curve(db, allconfig["config"])
-    opttemp = get_opttemp(db, allconfig["config"]) + get_temp_adjustment(
-        allconfig["config"]
+        c = get_heat_curve_from_temp(db, c, opttemp)
+
+    current_temp = get_current_water_temp(url)
+
+    logger.debug(
+        f"Warmwater: correct temp is {correct_temp}, current {current_temp} for {CONTROLLER}"
     )
-
-    c = get_heat_curve_from_temp(db, c, opttemp)
+    logger.debug(f"Heating: setting curve {c} for {CONTROLLER}")
 
     set_curve(url, c)
 
     # correct_state = True
-    if current_state != correct_state:
-        logger.debug(
-            f"Need to change state of {CONTROLLER} running to {correct_state}\n"
-        )
+    if current_temp != correct_temp:
+        logger.debug(f"Need to change {CONTROLLER} warmwater to {correct_temp}\n")
 
-        set_water_heating(url, correct_state)
+        set_water_temp(url, correct_temp)
