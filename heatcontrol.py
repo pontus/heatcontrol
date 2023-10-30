@@ -40,11 +40,14 @@ class NoNeed(typing.TypedDict):
     end: float
     weekdays: str
 
+
 class TempAdjustment(typing.TypedDict):
-    starthour: float
-    endhour: float
+    start: float
+    end: float
     weekdays: str
     adjustment: float
+
+
 class Prep(typing.TypedDict):
     earliest: float
     duration: float
@@ -120,7 +123,7 @@ defaults: Config = {
     "opttemp": 20.5,
     "tempexpensive": 19.8,
     "tempcheap": 21.0,
-    "tempadjustments": []
+    "tempadjustments": [],
 }
 
 
@@ -549,8 +552,8 @@ def get_temp_adjustment(config: Config) -> float:
     for p in config["tempadjustments"]:
         logger.debug(f"Checking temperature adjustment {p}")
         if dow in p["weekdays"]:
-            logger.debug(f"Checking {t} between {p['starthour']} and {p['endhour']}?")
-            if p["starthour"] <= t and p["endhour"] >= t:
+            logger.debug(f"Checking {t} between {p['start']} and {p['end']}?")
+            if p["start"] <= t and p["end"] >= t:
                 logger.debug(f"Yes, adjustment is {p['adjustment']}")
                 # Within window
                 return p["adjustment"]
