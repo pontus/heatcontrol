@@ -655,7 +655,9 @@ if __name__ == "__main__":
     logger.debug(f"Should be running for {CONTROLLER} is {correct_state}\n")
 
     c = get_heat_curve(db, allconfig["config"])
-    opttemp = get_opttemp(db, allconfig["config"])
+    opttemp = get_opttemp(db, allconfig["config"]) + get_temp_adjustment(
+        allconfig["config"]
+    )
 
     c = get_heat_curve_from_temp(db, c, opttemp)
 
