@@ -96,10 +96,9 @@ class Config(typing.TypedDict):
     noneed: list[NoNeed]
     tempadjustments: list[TempAdjustment]
     prepww: list[Prep]
-    opttemp: float
-    tempexpensive: float
-    tempcheap: float
-    tempdefault: float
+    opttempexpensive: float
+    opttempcheap: float
+    opttempdefault: float
 
 
 class NetConfig(typing.TypedDict):
@@ -130,10 +129,9 @@ defaults: Config = {
     "heatexpensivepara": -40,
     "heatcheapcurve": 3,
     "heatexpensivecurve": -4,
-    "opttemp": 20.5,
-    "tempexpensive": 19.8,
-    "tempcheap": 21.0,
-    "tempdefault": 20.0,
+    "opttempexpensive": 19.8,
+    "opttempcheap": 21.0,
+    "opttempdefault": 20.0,
     "tempadjustments": [],
     "wwcheaptemp": 54,
     "wwdefaulttemp": 42,
@@ -579,12 +577,12 @@ def set_water_temp(url: str, ns: float) -> None:
 
 
 def set_curve(url: str, c: HeatValues) -> None:
-    curve =c["curve"]
+    curve = c["curve"]
     para = c["parallel"]
 
     if curve < 0:
         logger.debug(f"Adjusting bad curve {curve} to 0")
-        curve =0
+        curve = 0
     if curve > 100:
         logger.debug(f"Adjusting bad curve {curve} to 100")
         curve = 100
@@ -602,17 +600,13 @@ def set_curve(url: str, c: HeatValues) -> None:
     hc = r.json()
 
     if hc["2205"] != curve:
-        logger.debug(
-            f"Need to update curve - current {hc['2205']}, desired {curve}"
-        )
+        logger.debug(f"Need to update curve - current {hc['2205']}, desired {curve}")
 
         r = requests.get(f"{url}/api/set?idx=2205&val={curve}")
         if r.status_code != 200:
             raise SystemError("Setting controller data failed")
     if hc["0207"] != para:
-        logger.debug(
-            f"Need to update parallel - current {hc['0207']}, desired {para}"
-        )
+        logger.debug(f"Need to update parallel - current {hc['0207']}, desired {para}")
         r = requests.get(f"{url}/api/set?idx=0207&val={para}")
         if r.status_code != 200:
             raise SystemError("Setting controller data failed")
@@ -636,7 +630,6 @@ def get_temp_adjustment(config: Config) -> float:
 
 def get_opttemp(db: Database, config: Config) -> float:
     t = comp_hour()
-    opttemp = config["opttemp"]
 
     all_prices = get_prices(db)
     prices = list(filter(lambda x: price_apply(x, config), all_prices))
@@ -650,7 +643,7 @@ def get_opttemp(db: Database, config: Config) -> float:
     # We're in low price period
     for p in prices_low:
         if int(t) == p["timestamp"].hour:
-            opttemp = config["tempcheap"]
+            opttemp = config["opttempcheap"]
 
             logger.debug(f"Cheap hour, returning optimal temperature {opttemp}")
 
@@ -659,11 +652,11 @@ def get_opttemp(db: Database, config: Config) -> float:
     # We're in low price period
     for p in prices_high:
         if int(t) == p["timestamp"].hour:
-            opttemp = config["tempexpensive"]
+            opttemp = config["opttempexpensive"]
             logger.debug(f"Expensive hour, returning optimal temperature {opttemp}")
             return opttemp
 
-    opttemp = config["tempdefault"]
+    opttemp = config["opttempdefault"]
     logger.debug(
         f"Neither cheap nor expensive hour, returning optimal temperature {opttemp}"
     )
