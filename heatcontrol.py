@@ -634,6 +634,7 @@ def get_temp_adjustment(config: Config) -> float:
                 # Within window
                 return p["adjustment"]
     # No match, no adjustment
+    logger.debug("No adjustment found")
     return 0
 
 
