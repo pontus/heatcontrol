@@ -618,6 +618,14 @@ def get_temp_adjustment(config: Config) -> float:
     dow = str(datetime.datetime.now().isoweekday())
 
     for p in config["tempadjustments"]:
+        if (
+            not p
+            or type(p) != type({})
+            or any([w not in p for w in ("weekdays", "adjustment", "start", "end")])
+        ):
+            logger.debug(f"Ignoring bad adjustment entry {p}")
+            continue
+
         logger.debug(f"Checking temperature adjustment {p}")
         if dow in p["weekdays"]:
             logger.debug(f"Checking {t} between {p['start']} and {p['end']}?")
@@ -625,6 +633,7 @@ def get_temp_adjustment(config: Config) -> float:
                 logger.debug(f"Yes, adjustment is {p['adjustment']}")
                 # Within window
                 return p["adjustment"]
+    # No match, no adjustment
     return 0
 
 
