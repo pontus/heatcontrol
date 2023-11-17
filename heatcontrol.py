@@ -11,6 +11,7 @@ import dateutil.parser
 import datetime
 import sys
 import logging
+import logging.handlers
 import typing
 import yaml
 
@@ -298,7 +299,7 @@ def setup_logger(
     h = logging.StreamHandler()
     h.setLevel(console_level)
     logger.addHandler(h)
-    f = logging.FileHandler(filename)
+    f = logging.handlers.TimedRotatingFileHandler(filename, when='midnight', backupCount=30)
     f.setFormatter(logging.Formatter("{asctime} - {levelname} - {message}", style="{"))
     f.setLevel(file_level)
     logger.addHandler(f)
