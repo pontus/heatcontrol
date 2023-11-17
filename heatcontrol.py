@@ -45,7 +45,9 @@ class TempAdjustment(typing.TypedDict):
     start: float
     end: float
     weekdays: str
-    adjustment: float
+    adjustment: typing.NotRequired[float]
+    atleast: typing.NotRequired[float]
+    atmost: typing.NotRequired[float]
 
 
 class Prep(typing.TypedDict):
@@ -613,7 +615,7 @@ def set_curve(url: str, c: HeatValues) -> None:
     return
 
 
-def get_temp_adjustment(config: Config) -> float:
+def get_adjusted_temp(config: Config, opttemp: float) -> float:
     t = comp_hour()
     dow = str(datetime.datetime.now().isoweekday())
 
@@ -621,7 +623,7 @@ def get_temp_adjustment(config: Config) -> float:
         if (
             not p
             or type(p) != type({})
-            or any([w not in p for w in ("weekdays", "adjustment", "start", "end")])
+            or any([w not in p for w in ("weekdays", "start", "end")])
         ):
             logger.debug(f"Ignoring bad adjustment entry {p}")
             continue
@@ -630,12 +632,23 @@ def get_temp_adjustment(config: Config) -> float:
         if dow in p["weekdays"]:
             logger.debug(f"Checking {t} between {p['start']} and {p['end']}?")
             if p["start"] <= t and p["end"] >= t:
-                logger.debug(f"Yes, adjustment is {p['adjustment']}")
+                logger.debug(f"Within time window, applying adjustment {p}")
+                temp = opttemp
+                if "adjustment" in p:
+                    temp += p["adjustment"]
+
+                if "atleast" in p and temp < p["atleast"]:
+                    temp = p["atleast"]
+
+                if "atmost" in p and temp > p["atmost"]:
+                    temp = p["atmost"]
+
                 # Within window
-                return p["adjustment"]
+                logger.debug(f"Returning adjusted temperature {temp}")
+                return temp
     # No match, no adjustment
     logger.debug("No adjustment found")
-    return 0
+    return opttemp
 
 
 def get_opttemp(db: Database, config: Config) -> float:
@@ -754,9 +767,7 @@ if __name__ == "__main__":
 
         correct_temp = get_water_temp(db, allconfig["config"])
         c = get_heat_curve(db, allconfig["config"])
-        opttemp = get_opttemp(db, allconfig["config"]) + get_temp_adjustment(
-            allconfig["config"]
-        )
+        opttemp = get_adjusted_temp(allconfig["config"], get_opttemp(db, allconfig["config"]))
 
         c = get_heat_curve_from_temp(db, c, opttemp)
 
