@@ -152,7 +152,7 @@ def get_netatmo_token(db: Database):
     if key in db:
         natoken = json.loads(db[key])
 
-    if natoken and natoken["expire_at"] < time.time():
+    if natoken and natoken["expire_at"] > time.time():
         return natoken
 
     with open("config.yaml") as f:
