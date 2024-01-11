@@ -741,7 +741,11 @@ def get_heat_curve_from_temp(db: Database, c: HeatValues, opttemp: float):
         if (nu - natemps["uppe"]["time"]) < 3600:
             difftemp = opttemp - natemps["uppe"]["temperature"]
             logger.debug(f"Adjustment from netatmo is {difftemp}")
-            c["parallel"] = int(opttemp - 20) * 10
+            c["parallel"] = (
+                max(int(opttemp - 20) * 10, 0)
+                if difftemp > 0
+                else int(opttemp - 20) * 10
+            )
             c["curve"] += int(10 * difftemp)
             logger.debug(f"New curve is {c}")
 
