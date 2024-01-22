@@ -732,23 +732,30 @@ def get_heat_curve(db: Database, config: Config) -> HeatValues:
 
 def get_heat_curve_from_temp(db: Database, c: HeatValues, opttemp: float):
     natemps = get_netatmo_temps(db)
-
+    device = "källaren"
     logger.debug(f"Curve input is {c}")
     logger.debug(f"Temp from netatmo: {natemps}, optimal temp is {opttemp}")
 
     nu = time.time()
-    if "uppe" in natemps:
-        if (nu - natemps["uppe"]["time"]) < 3600:
-            difftemp = opttemp - natemps["uppe"]["temperature"]
+    if device in natemps:
+        logger.debug(f"Found {device} in {natemps}")
+
+        if (nu - natemps[device]["time"]) < 3600:
+            difftemp = opttemp - natemps[device]["temperature"]
             logger.debug(f"Adjustment from netatmo is {difftemp}")
-            c["parallel"] = int(opttemp - 20) * 10
-            c["curve"] += int(10 * difftemp)
+            if difftemp < 0:
+                # Hotter than we want, disable heating
+                c["parallel"] = 0
+                c["curve"] = 0
+            else:
+                c["parallel"] = int(opttemp - 20) * 10
+                c["curve"] += int(10 * difftemp)
             logger.debug(f"New curve is {c}")
 
         else:
             logger.debug("Temperature from netatmo is too old")
     else:
-        logger.debug("No reading from netatmo for uppe")
+        logger.debug(f"No reading from netatmo for {device}")
 
     return c
 
