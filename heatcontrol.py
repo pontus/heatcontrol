@@ -12,6 +12,7 @@ import datetime
 import sys
 import logging
 import logging.handlers
+import unicodedata
 import typing
 import yaml
 
@@ -102,11 +103,18 @@ class Config(typing.TypedDict):
     opttempexpensive: float
     opttempcheap: float
     opttempdefault: float
+    nadevice: str
 
 
 class NetConfig(typing.TypedDict):
     config: Config
     override: list[Override]
+
+
+class NAtoken(typing.TypedDict):
+    expire_at: float
+    expire_in: float
+    access_token: str
 
 
 Database: typing.TypeAlias = "dbm._Database"
@@ -139,16 +147,17 @@ defaults: Config = {
     "wwcheaptemp": 54,
     "wwdefaulttemp": 42,
     "wwexpensivetemp": 35,
+    "nadevice": "källaren",
 }
 
 
 logger = logging.getLogger()
 
 
-def get_netatmo_token(db: Database):
+def get_netatmo_token(db: Database) -> NAtoken:
     key = "natoken"
 
-    natoken: typing.Optional[typing.Dict] = None
+    natoken: typing.Optional[NAtoken] = None
     if key in db:
         natoken = json.loads(db[key])
 
@@ -219,6 +228,13 @@ def get_netatmo_temps(db: Database) -> NATemps:
         fill_netatmo_module_data(p, natemps)
 
     natemps["last_store"] = time.time()
+
+    for p in list(natemps.keys()):
+        normalkey = unicodedata.normalize("NFC", p)
+        if p != normalkey:
+            logger.debug(f"Adding entry for {p} normalized as {normalkey}")
+            natemps[normalkey] = natemps[p]
+
     db[key] = json.dumps(natemps)
 
     return natemps
@@ -299,7 +315,9 @@ def setup_logger(
     h = logging.StreamHandler()
     h.setLevel(console_level)
     logger.addHandler(h)
-    f = logging.handlers.TimedRotatingFileHandler(filename, when='midnight', backupCount=30)
+    f = logging.handlers.TimedRotatingFileHandler(
+        filename, when="midnight", backupCount=30
+    )
     f.setFormatter(logging.Formatter("{asctime} - {levelname} - {message}", style="{"))
     f.setLevel(file_level)
     logger.addHandler(f)
@@ -730,9 +748,11 @@ def get_heat_curve(db: Database, config: Config) -> HeatValues:
     return c
 
 
-def get_heat_curve_from_temp(db: Database, c: HeatValues, opttemp: float):
+def get_heat_curve_from_temp(
+    db: Database, c: HeatValues, opttemp: float, config: Config
+) -> HeatValues:
     natemps = get_netatmo_temps(db)
-    device = "källaren"
+    device = unicodedata.normalize("NFC", config["nadevice"])
     logger.debug(f"Curve input is {c}")
     logger.debug(f"Temp from netatmo: {natemps}, optimal temp is {opttemp}")
 
@@ -775,9 +795,11 @@ if __name__ == "__main__":
 
         correct_temp = get_water_temp(db, allconfig["config"])
         c = get_heat_curve(db, allconfig["config"])
-        opttemp = get_adjusted_temp(allconfig["config"], get_opttemp(db, allconfig["config"]))
+        opttemp = get_adjusted_temp(
+            allconfig["config"], get_opttemp(db, allconfig["config"])
+        )
 
-        c = get_heat_curve_from_temp(db, c, opttemp)
+        c = get_heat_curve_from_temp(db, c, opttemp, allconfig["config"])
 
     current_temp = get_current_water_temp(url)
 
