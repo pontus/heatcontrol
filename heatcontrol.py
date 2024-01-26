@@ -763,13 +763,8 @@ def get_heat_curve_from_temp(
         if (nu - natemps[device]["time"]) < 3600:
             difftemp = opttemp - natemps[device]["temperature"]
             logger.debug(f"Adjustment from netatmo is {difftemp}")
-            if difftemp < 0:
-                # Hotter than we want, disable heating
-                c["parallel"] = 0
-                c["curve"] = 0
-            else:
-                c["parallel"] = int(opttemp - 20) * 10
-                c["curve"] += int(10 * difftemp)
+            c["parallel"] = int(opttemp - 20) * 10
+            c["curve"] += int(10 * difftemp)
             logger.debug(f"New curve is {c}")
 
         else:
