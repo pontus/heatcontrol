@@ -192,7 +192,7 @@ def get_netatmo_token(db: Database) -> NAtoken:
     token["expire_at"] = t + token["expire_in"]
 
     db[key] = json.dumps(token)
-    return token
+    return typing.cast(NAtoken, token)
 
 
 def get_netatmo_temps(db: Database) -> NATemps:
@@ -273,7 +273,7 @@ def get_config() -> NetConfig:
             if not p in j["config"]:
                 j["config"][p] = defaults[p]  # type:ignore
 
-    return j
+    return typing.cast(NetConfig, j)
 
 
 def override_active(config: NetConfig) -> typing.Tuple[bool, float, HeatValues]:
@@ -572,7 +572,7 @@ def get_current_water_temp(url: str) -> float:
     if r.status_code != 200:
         raise SystemError("Getting controller data failed")
     hc = r.json()
-    return hc["0208"] / 10
+    return typing.cast(float, hc["0208"] / 10)
 
 
 def set_water_temp(url: str, ns: float) -> None:
