@@ -169,9 +169,23 @@ def get_netatmo_token(db: Database) -> NAtoken:
 
     t = time.time()
 
+    configtoken = naconfig["refreshtoken"]
+    refreshtoken = configtoken
+
+    if b"narefreshtoken" in db.keys():
+        dbtoken = db["narefreshtoken"]
+
+        if not isinstance(dbtoken, bytes):
+            dbtoken = dbtoken.encode("ascii")
+
+        old, new = dbtoken.split(b"\x00")
+
+        if old == refreshtoken.encode("ascii"):
+            refreshtoken = new.decode()
+
     d = {
         "grant_type": "refresh_token",
-        "refresh_token": naconfig["refreshtoken"],
+        "refresh_token": refreshtoken,
         "client_id": naconfig["clientid"],
         "client_secret": naconfig["clientsecret"],
     }
@@ -189,6 +203,11 @@ def get_netatmo_token(db: Database) -> NAtoken:
         raise SystemError("Failed to refresh token")
 
     token = r.json()
+
+    db[b"narefreshtoken"] = (
+        configtoken.encode("ascii") + b"\x00" + token["refresh_token"].encode("ascii")
+    )
+
     token["expire_at"] = t + token["expire_in"]
 
     db[key] = json.dumps(token)
@@ -261,10 +280,14 @@ def get_config() -> NetConfig:
 
     logger.debug(f"Checking control data {CONTROL_BASE}/.json\n")
 
-    r = requests.get(f"{CONTROL_BASE}/.json")
-    if r.status_code != 200:
-        raise SystemError("override URL set but failed to fetch")
-    j = json.loads(r.text.strip('"').encode("ascii").decode("unicode_escape"))
+    try:
+        r = requests.get(f"{CONTROL_BASE}/.json")
+        if r.status_code != 200:
+            raise SystemError("override URL set but failed to fetch")
+        j = json.loads(r.text.strip('"').encode("ascii").decode("unicode_escape"))
+    except:
+        j = NetConfig(config=defaults, override=[])
+        return j
 
     if not "config" in j:
         j["config"] = defaults
