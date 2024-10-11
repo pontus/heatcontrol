@@ -287,8 +287,9 @@ def get_config() -> NetConfig:
         r = requests.get(f"{CONTROL_BASE}/.json")
         if r.status_code != 200:
             raise SystemError("override URL set but failed to fetch")
-        j = json.loads(r.text.strip('"').encode("ascii").decode("unicode_escape"))
+        j = json.loads(r.text.strip('"').encode("utf-8").decode("utf-8"))
     except:
+        logger.warn(f"Failed to fetch or decode {CONTROL_BASE}/.json, using defaults\n")
         j = NetConfig(config=defaults, override=[])
         return j
 
@@ -506,7 +507,7 @@ def get_water_temp(db: Database, config: Config) -> float:
         logger.debug(
             f"No warm water; {t} past bedtime cooldown {config['bedtime']}-{config['wwcooldown']}"
         )
-        return False
+        return config["wwcheaptemp"]
 
     all_prices = get_prices(db)
 
