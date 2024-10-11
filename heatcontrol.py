@@ -240,13 +240,13 @@ def get_netatmo_temps(db: Database) -> NATemps:
         return NATemps()
 
     # Only consider one device for now
-    nadata = r.json()["body"]["devices"][0]
-    fill_netatmo_module_data(nadata, natemps)
 
-    for p in nadata["modules"]:
-        fill_netatmo_module_data(p, natemps)
+    for nadata in r.json()["body"]["devices"]:
 
-    natemps["last_store"] = time.time()
+        fill_netatmo_module_data(nadata, natemps)
+
+        for p in nadata["modules"]:
+            fill_netatmo_module_data(p, natemps)
 
     for p in list(natemps.keys()):
         normalkey = unicodedata.normalize("NFC", p)
@@ -262,7 +262,9 @@ def get_netatmo_temps(db: Database) -> NATemps:
 def fill_netatmo_module_data(na: typing.Dict, t: NATemps) -> None:
     "Fill in temperature from netatmo details"
 
-    name = na["module_name"]
+    name = "device"
+    if "module_name" in na:
+        name = na["module_name"]
 
     if not "dashboard_data" in na:
         return
@@ -272,6 +274,7 @@ def fill_netatmo_module_data(na: typing.Dict, t: NATemps) -> None:
             "temperature": na["dashboard_data"]["Temperature"],
             "time": na["dashboard_data"]["time_utc"],
         }
+        t["last_store"] = time.time()
 
 
 def get_config() -> NetConfig:
@@ -507,6 +510,10 @@ def get_water_temp(db: Database, config: Config) -> float:
 
     all_prices = get_prices(db)
 
+    if len(all_prices) == 0:
+        logger.debug("No prices available, defaulting")
+        return config["wwdefaulttemp"]
+
     prices = list(filter(lambda x: price_apply(x, config), all_prices))
     logger.debug(f"Prices for today are {prices}")
 
@@ -697,6 +704,10 @@ def get_opttemp(db: Database, config: Config) -> float:
     t = comp_hour()
 
     all_prices = get_prices(db)
+    if len(all_prices) == 0:
+        logger.debug("No prices available, defaulting")
+        return config["opttempdefault"]
+
     prices = list(filter(lambda x: price_apply(x, config), all_prices))
     logger.debug(f"Prices for today are {prices}")
 
@@ -736,6 +747,10 @@ def get_heat_curve(db: Database, config: Config) -> HeatValues:
     )
 
     all_prices = get_prices(db)
+    if len(all_prices) == 0:
+        logger.debug("No prices available, defaulting")
+        return c
+
     prices = list(filter(lambda x: price_apply(x, config), all_prices))
     logger.debug(f"Prices for today are {prices}")
 
