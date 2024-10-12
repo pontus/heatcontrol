@@ -507,7 +507,7 @@ def get_water_temp(db: Database, config: Config) -> float:
         logger.debug(
             f"No warm water; {t} past bedtime cooldown {config['bedtime']}-{config['wwcooldown']}"
         )
-        return config["wwcheaptemp"]
+        return config["wwexpensivetemp"]
 
     all_prices = get_prices(db)
 
