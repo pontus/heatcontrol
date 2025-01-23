@@ -9,6 +9,7 @@ import dbm
 import random
 import dateutil.parser
 import datetime
+import math
 import sys
 import logging
 import logging.handlers
@@ -802,8 +803,21 @@ def get_heat_curve_from_temp(
         if (nu - natemps[device]["time"]) < 3600:
             difftemp = opttemp - natemps[device]["temperature"]
             logger.debug(f"Adjustment from netatmo is {difftemp}")
-            c["parallel"] = int(opttemp - 20) * 10
-            c["curve"] += int(10 * difftemp)
+
+            if abs(difftemp) < 1:
+                diffset = difftemp
+            else:
+                diffset = math.copysign(math.pow(abs(difftemp), 1.5), difftemp)
+
+            if abs(opttemp-20) < 1:
+                parset = opttemp-20
+            else:
+                parset = math.copysign(math.pow(abs(opttemp-20), 1.5), opttemp-20)
+
+            logger.debug(f"Adjustment curve is {diffset}, curve is {c}")
+
+            c["parallel"] = int(parset * 10)
+            c["curve"] = max(0,int(10 * diffset))
             logger.debug(f"New curve is {c}")
 
         else:
