@@ -763,7 +763,7 @@ def get_heat_curve(db: Database, config: Config) -> HeatValues:
     # We're in low price period
     for p in prices_low:
         if int(t) == p["timestamp"].hour:
-            c["curve"] += int(config["heatcheapcurve"])
+            c["curve"] += max(0,int(config["heatcheapcurve"]))
             c["parallel"] += int(config["heatcheappara"])
 
             logger.debug(f"Cheap hour, returning heating settings {c}")
@@ -773,7 +773,7 @@ def get_heat_curve(db: Database, config: Config) -> HeatValues:
     # We're in high price period
     for p in prices_high:
         if int(t) == p["timestamp"].hour:
-            c["curve"] += int(config["heatexpensivecurve"])
+            c["curve"] += max(0,int(config["heatexpensivecurve"]))
             c["parallel"] += int(config["heatexpensivepara"])
 
             logger.debug(f"Expensive hour, returning heating settings {c}")
