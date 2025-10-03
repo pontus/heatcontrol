@@ -19,7 +19,7 @@ import yaml
 
 MAX_WAIT = 150
 
-
+TIMESLICE_LENGTH = 0.25
 CONTROLLER = "H60-083a8d015ed0"
 REGION = "SE3"
 CONTROL_BASE = (
@@ -439,7 +439,7 @@ def water_prep_needed(
         for p in all_prices:
             if (
                 comp_hour(p["timestamp"]) >= t
-                and t < (comp_hour(p["timestamp"]) + 0.25)
+                and t < (comp_hour(p["timestamp"]) + TIMESLICE_LENGTH)
                 and p["value"] > config["blockprice"]
             ):
                 logger.debug(
@@ -552,14 +552,14 @@ def get_water_temp(db: Database, config: Config) -> float:
     # in one of the cheap slots
 
     for p in prices_low:
-        if comp_hour(p["timestamp"]) >= t and comp_hour(p["timestamp"]) + 0.25 < t:
+        if comp_hour(p["timestamp"]) >= t and comp_hour(p["timestamp"]) + TIMESLICE_LENGTH < t:
             logger.debug(
                 f"Found this hour ({t}) in low prices, returning {config['wwcheaptemp']}"
             )
             return config["wwcheaptemp"]
 
     for p in prices_high:
-        if comp_hour(p["timestamp"]) >= t and comp_hour(p["timestamp"]) + 0.25 < t:
+        if comp_hour(p["timestamp"]) >= t and comp_hour(p["timestamp"]) + TIMESLICE_LENGTH < t:
 
             logger.debug(
                 f"Found this hour ({t}) in high prices, returning {config['wwexpensivetemp']}"
@@ -725,7 +725,7 @@ def get_opttemp(db: Database, config: Config) -> float:
 
     # We're in low price period
     for p in prices_low:
-        if t >= comp_hour(p["timestamp"]) and t < comp_hour(p["timestamp"]) + 0.25:
+        if t >= comp_hour(p["timestamp"]) and t < comp_hour(p["timestamp"]) + TIMESLICE_LENGTH:
             opttemp = config["opttempcheap"]
 
             logger.debug(f"Cheap hour, returning optimal temperature {opttemp}")
@@ -734,7 +734,7 @@ def get_opttemp(db: Database, config: Config) -> float:
 
     # We're in low price period
     for p in prices_high:
-        if t >= comp_hour(p["timestamp"]) and t < comp_hour(p["timestamp"]) + 0.25:
+        if t >= comp_hour(p["timestamp"]) and t < comp_hour(p["timestamp"]) + TIMESLICE_LENGTH:
 
             opttemp = config["opttempexpensive"]
             logger.debug(f"Expensive hour, returning optimal temperature {opttemp}")
