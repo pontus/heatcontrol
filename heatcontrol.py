@@ -556,14 +556,20 @@ def get_water_temp(db: Database, config: Config) -> float:
     # in one of the cheap slots
 
     for p in prices_low:
-        if comp_hour(p["timestamp"]) >= t and comp_hour(p["timestamp"]) + TIMESLICE_LENGTH < t:
+        if (
+            comp_hour(p["timestamp"]) >= t
+            and comp_hour(p["timestamp"]) + TIMESLICE_LENGTH < t
+        ):
             logger.debug(
                 f"Found this hour ({t}) in low prices, returning {config['wwcheaptemp']}"
             )
             return config["wwcheaptemp"]
 
     for p in prices_high:
-        if comp_hour(p["timestamp"]) >= t and comp_hour(p["timestamp"]) + TIMESLICE_LENGTH < t:
+        if (
+            comp_hour(p["timestamp"]) >= t
+            and comp_hour(p["timestamp"]) + TIMESLICE_LENGTH < t
+        ):
 
             logger.debug(
                 f"Found this hour ({t}) in high prices, returning {config['wwexpensivetemp']}"
@@ -729,7 +735,10 @@ def get_opttemp(db: Database, config: Config) -> float:
 
     # We're in low price period
     for p in prices_low:
-        if t >= comp_hour(p["timestamp"]) and t < comp_hour(p["timestamp"]) + TIMESLICE_LENGTH:
+        if (
+            t >= comp_hour(p["timestamp"])
+            and t < comp_hour(p["timestamp"]) + TIMESLICE_LENGTH
+        ):
             opttemp = config["opttempcheap"]
 
             logger.debug(f"Cheap hour, returning optimal temperature {opttemp}")
@@ -738,7 +747,10 @@ def get_opttemp(db: Database, config: Config) -> float:
 
     # We're in low price period
     for p in prices_high:
-        if t >= comp_hour(p["timestamp"]) and t < comp_hour(p["timestamp"]) + TIMESLICE_LENGTH:
+        if (
+            t >= comp_hour(p["timestamp"])
+            and t < comp_hour(p["timestamp"]) + TIMESLICE_LENGTH
+        ):
 
             opttemp = config["opttempexpensive"]
             logger.debug(f"Expensive hour, returning optimal temperature {opttemp}")
