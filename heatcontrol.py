@@ -483,9 +483,12 @@ def water_prep_needed(
         # We have not reached preptime, no use in heating now.
         return True, False
 
-    if comp_hour(earlierprices[0]["timestamp"]) > t:
+    if (
+        comp_hour(earlierprices[0]["timestamp"])
+        >= (t - t % TIMESLICE_LENGTH) + TIMESLICE_LENGTH
+    ):
         # At least one cheap remaining but this isn't the cheapest, do
-        # not heat/
+        # not heat
         logger.debug(f"Low prices exist before {needhour} but we can wait")
 
         return True, False
