@@ -468,11 +468,15 @@ def water_prep_needed(
         # before
         if t >= needhour - preptime:
             for p in all_prices:
-                if comp_hour(p["timestamp"].hour) and p["value"] > config["blockprice"]:
+                if (
+                    comp_hour(p["timestamp"]) >= t
+                    and comp_hour(p["timestamp"]) + TIMESLICE_LENGTH > t
+                    and p["value"] > config["blockprice"]
+                ):
                     logger.debug(
                         f"Within need (or prep), should run heater but expensive so skipping"
                     )
-                return (True, False)
+                    return (True, False)
 
             return True, True
 
