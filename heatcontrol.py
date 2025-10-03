@@ -557,8 +557,8 @@ def get_water_temp(db: Database, config: Config) -> float:
 
     for p in prices_low:
         if (
-            comp_hour(p["timestamp"]) >= t
-            and comp_hour(p["timestamp"]) + TIMESLICE_LENGTH < t
+            comp_hour(p["timestamp"]) <= t
+            and comp_hour(p["timestamp"]) + TIMESLICE_LENGTH > t
         ):
             logger.debug(
                 f"Found this hour ({t}) in low prices, returning {config['wwcheaptemp']}"
@@ -567,8 +567,8 @@ def get_water_temp(db: Database, config: Config) -> float:
 
     for p in prices_high:
         if (
-            comp_hour(p["timestamp"]) >= t
-            and comp_hour(p["timestamp"]) + TIMESLICE_LENGTH < t
+            comp_hour(p["timestamp"]) <= t
+            and comp_hour(p["timestamp"]) + TIMESLICE_LENGTH > t
         ):
 
             logger.debug(
