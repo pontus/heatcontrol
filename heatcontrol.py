@@ -19,7 +19,7 @@ import yaml
 
 MAX_WAIT = 150
 
-
+TIMESLICE_LENGTH = 0.25
 CONTROLLER = "H60-083a8d015ed0"
 REGION = "SE3"
 CONTROL_BASE = (
@@ -360,9 +360,8 @@ def price_apply(x: Price, config: Config) -> bool:
     return False
 
 
-def comp_hour() -> float:
-    t = time.localtime()
-    return t.tm_hour + t.tm_min / 60
+def comp_hour(t: datetime.datetime = datetime.datetime.now()) -> float:
+    return t.hour + t.minute / 60
 
 
 def filter_prices_low(p: list[Price], config: Config) -> list[Price]:
@@ -438,7 +437,11 @@ def water_prep_needed(
     if t >= needhour:
         # We're in the time window and should apply heating
         for p in all_prices:
-            if p["timestamp"].hour == int(t) and p["value"] > config["blockprice"]:
+            if (
+                comp_hour(p["timestamp"]) >= t
+                and t < (comp_hour(p["timestamp"]) + TIMESLICE_LENGTH)
+                and p["value"] > config["blockprice"]
+            ):
                 logger.debug(
                     f"Within need, should run heater ({t}>={needhour} but expensive so skipping"
                 )
@@ -452,7 +455,8 @@ def water_prep_needed(
     # Any remaining low prices before getup from now?
     earlierprices = list(
         filter(
-            lambda x: x["timestamp"].hour < needhour and x["timestamp"].hour >= int(t),
+            lambda x: comp_hour(x["timestamp"]) < needhour
+            and comp_hour(x["timestamp"]) >= t,
             low_prices,
         )
     )
@@ -464,20 +468,26 @@ def water_prep_needed(
         # before
         if t >= needhour - preptime:
             for p in all_prices:
-                if p["timestamp"].hour == int(t) and p["value"] > config["blockprice"]:
+                if (
+                    comp_hour(p["timestamp"]) >= t
+                    and comp_hour(p["timestamp"]) + TIMESLICE_LENGTH > t
+                    and p["value"] > config["blockprice"]
+                ):
                     logger.debug(
                         f"Within need (or prep), should run heater but expensive so skipping"
                     )
-                return (True, False)
+                    return (True, False)
 
             return True, True
 
         # We have not reached preptime, no use in heating now.
         return True, False
 
-    if earlierprices[0]["timestamp"].hour != int(t):
+    end_current_timeslice = (t - t % TIMESLICE_LENGTH) + TIMESLICE_LENGTH
+
+    if comp_hour(earlierprices[0]["timestamp"]) >= end_current_timeslice:
         # At least one cheap remaining but this isn't the cheapest, do
-        # not heat/
+        # not heat
         logger.debug(f"Low prices exist before {needhour} but we can wait")
 
         return True, False
@@ -548,14 +558,20 @@ def get_water_temp(db: Database, config: Config) -> float:
     # in one of the cheap slots
 
     for p in prices_low:
-        if p["timestamp"].hour == int(t):
+        if (
+            comp_hour(p["timestamp"]) <= t
+            and comp_hour(p["timestamp"]) + TIMESLICE_LENGTH > t
+        ):
             logger.debug(
                 f"Found this hour ({t}) in low prices, returning {config['wwcheaptemp']}"
             )
             return config["wwcheaptemp"]
 
     for p in prices_high:
-        if p["timestamp"].hour == int(t):
+        if (
+            comp_hour(p["timestamp"]) <= t
+            and comp_hour(p["timestamp"]) + TIMESLICE_LENGTH > t
+        ):
             logger.debug(
                 f"Found this hour ({t}) in high prices, returning {config['wwexpensivetemp']}"
             )
@@ -720,16 +736,21 @@ def get_opttemp(db: Database, config: Config) -> float:
 
     # We're in low price period
     for p in prices_low:
-        if int(t) == p["timestamp"].hour:
+        if (
+            t >= comp_hour(p["timestamp"])
+            and t < comp_hour(p["timestamp"]) + TIMESLICE_LENGTH
+        ):
             opttemp = config["opttempcheap"]
-
             logger.debug(f"Cheap hour, returning optimal temperature {opttemp}")
 
             return opttemp
 
     # We're in low price period
     for p in prices_high:
-        if int(t) == p["timestamp"].hour:
+        if (
+            t >= comp_hour(p["timestamp"])
+            and t < comp_hour(p["timestamp"]) + TIMESLICE_LENGTH
+        ):
             opttemp = config["opttempexpensive"]
             logger.debug(f"Expensive hour, returning optimal temperature {opttemp}")
             return opttemp
@@ -764,7 +785,7 @@ def get_heat_curve(db: Database, config: Config) -> HeatValues:
     # We're in low price period
     for p in prices_low:
         if int(t) == p["timestamp"].hour:
-            c["curve"] += max(0,int(config["heatcheapcurve"]))
+            c["curve"] += max(0, int(config["heatcheapcurve"]))
             c["parallel"] += int(config["heatcheappara"])
 
             logger.debug(f"Cheap hour, returning heating settings {c}")
@@ -774,7 +795,7 @@ def get_heat_curve(db: Database, config: Config) -> HeatValues:
     # We're in high price period
     for p in prices_high:
         if int(t) == p["timestamp"].hour:
-            c["curve"] += max(0,int(config["heatexpensivecurve"]))
+            c["curve"] += max(0, int(config["heatexpensivecurve"]))
             c["parallel"] += int(config["heatexpensivepara"])
 
             logger.debug(f"Expensive hour, returning heating settings {c}")
@@ -809,15 +830,15 @@ def get_heat_curve_from_temp(
             else:
                 diffset = math.copysign(math.pow(abs(difftemp), 1.5), difftemp)
 
-            if abs(opttemp-20) < 1:
-                parset = opttemp-20
+            if abs(opttemp - 20) < 1:
+                parset = opttemp - 20
             else:
-                parset = math.copysign(math.pow(abs(opttemp-20), 1.5), opttemp-20)
+                parset = math.copysign(math.pow(abs(opttemp - 20), 1.5), opttemp - 20)
 
             logger.debug(f"Adjustment curve is {diffset}, curve is {c}")
 
             c["parallel"] = int(parset * 10)
-            c["curve"] = max(0,int(10 * diffset))
+            c["curve"] = max(0, int(10 * diffset))
             logger.debug(f"New curve is {c}")
 
         else:
