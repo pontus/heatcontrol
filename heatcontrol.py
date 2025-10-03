@@ -573,7 +573,6 @@ def get_water_temp(db: Database, config: Config) -> float:
             comp_hour(p["timestamp"]) <= t
             and comp_hour(p["timestamp"]) + TIMESLICE_LENGTH > t
         ):
-
             logger.debug(
                 f"Found this hour ({t}) in high prices, returning {config['wwexpensivetemp']}"
             )
