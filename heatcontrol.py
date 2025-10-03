@@ -741,7 +741,6 @@ def get_opttemp(db: Database, config: Config) -> float:
             and t < comp_hour(p["timestamp"]) + TIMESLICE_LENGTH
         ):
             opttemp = config["opttempcheap"]
-
             logger.debug(f"Cheap hour, returning optimal temperature {opttemp}")
 
             return opttemp
@@ -752,7 +751,6 @@ def get_opttemp(db: Database, config: Config) -> float:
             t >= comp_hour(p["timestamp"])
             and t < comp_hour(p["timestamp"]) + TIMESLICE_LENGTH
         ):
-
             opttemp = config["opttempexpensive"]
             logger.debug(f"Expensive hour, returning optimal temperature {opttemp}")
             return opttemp
