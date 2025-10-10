@@ -453,17 +453,17 @@ def water_prep_needed(
         return (True, True)
 
     # Any remaining low prices before getup from now?
-    earlierprices = list(
+    earlyprices = list(
         filter(
             lambda x: comp_hour(x["timestamp"]) < needhour
-            and comp_hour(x["timestamp"]) >= t,
+            and comp_hour(x["timestamp"]) >= earliest,
             low_prices,
         )
     )
 
-    logger.debug(f"Low prices before {needhour} are {earlierprices}")
+    logger.debug(f"Low prices before {needhour} are {earlyprices}")
 
-    if not earlierprices:
+    if not earlyprices:
         # No low price on the morning before getup, do heat anyway just
         # before
         if t >= needhour - preptime:
@@ -483,18 +483,23 @@ def water_prep_needed(
         # We have not reached preptime, no use in heating now.
         return True, False
 
-    end_current_timeslice = (t - t % TIMESLICE_LENGTH) + TIMESLICE_LENGTH
+    checkearlyprices = earlyprices[0 : math.ceil(preptime / TIMESLICE_LENGTH)]
 
-    if comp_hour(earlierprices[0]["timestamp"]) >= end_current_timeslice:
-        # At least one cheap remaining but this isn't the cheapest, do
-        # not heat
-        logger.debug(f"Low prices exist before {needhour} but we can wait")
+    for p in checkearlyprices:
+        if (
+            comp_hour(p["timestamp"]) <= t
+            and comp_hour(p["timestamp"]) + TIMESLICE_LENGTH > t
+        ):
+            # Current time is among the cheapest before needed, warm
+            logger.debug(f"We're at a low price before {needhour} from {t}, warm")
 
-        return True, False
+            return True, True
 
-    logger.debug(f"We're at lowest price before {needhour} from {t}, warm")
+    logger.debug(
+        f"Low prices exist between {earliest} and {needhour} but this is not one of them"
+    )
 
-    return True, True
+    return True, False
 
 
 def check_noneed(nn: NoNeed) -> bool:
@@ -563,7 +568,7 @@ def get_water_temp(db: Database, config: Config) -> float:
             and comp_hour(p["timestamp"]) + TIMESLICE_LENGTH > t
         ):
             logger.debug(
-                f"Found this hour ({t}) in low prices, returning {config['wwcheaptemp']}"
+                f"Found this time ({t}) in low prices, returning {config['wwcheaptemp']}"
             )
             return config["wwcheaptemp"]
 
@@ -573,7 +578,7 @@ def get_water_temp(db: Database, config: Config) -> float:
             and comp_hour(p["timestamp"]) + TIMESLICE_LENGTH > t
         ):
             logger.debug(
-                f"Found this hour ({t}) in high prices, returning {config['wwexpensivetemp']}"
+                f"Found this time ({t}) in high prices, returning {config['wwexpensivetemp']}"
             )
             return config["wwexpensivetemp"]
 
