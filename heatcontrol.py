@@ -845,8 +845,8 @@ def get_heat_curve_from_temp(
 
             logger.debug(f"Adjustment curve is {diffset}, curve is {c}")
 
-            c["parallel"] = int(parset * 10)
-            c["curve"] = max(0, int(10 * diffset))
+            c["parallel"] += int(parset * 10)
+            c["curve"] += max(0, int(10 * diffset))
             logger.debug(f"New curve is {c}")
 
         else:
