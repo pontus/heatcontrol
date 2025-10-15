@@ -824,11 +824,14 @@ def get_heat_curve_from_temp(
 
     nu = time.time()
     if device in natemps:
-        logger.debug(f"Found {device} in {natemps}")
+        logger.debug(
+            f"Found {device} in {natemps}, using temperature "
+            + f"{natemps[device]['temperature']}"
+        )
 
         if (nu - natemps[device]["time"]) < 3600:
             difftemp = opttemp - natemps[device]["temperature"]
-            logger.debug(f"Adjustment from netatmo is {difftemp}")
+            logger.debug(f"Adjustment temperature from netatmo is {difftemp}")
 
             if abs(difftemp) < 1:
                 diffset = difftemp
