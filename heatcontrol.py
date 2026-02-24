@@ -377,6 +377,7 @@ def filter_prices_low(p: list[Price], config: Config) -> list[Price]:
             minp * (100 + config["cutter"]) / 100,
             minp + config["maxdiff"],
             config["blockprice"],
+            config["highprice"],
         )
 
     return list(
